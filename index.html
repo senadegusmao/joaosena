@@ -11,7 +11,7 @@
 html,body{margin:0}
 img{max-width:100%}
 
-/* Fonte de cacabarabas.com: Monument Grotesk Mono Variable (Cargo, eixo MONO 1), 14px.
+/* Fonte de cacabarabas.com: Monument Grotesk Mono Variable (Cargo, eixo MONO 1), 12px, tudo em caixa alta.
    Ela só existe em sites do Cargo; fora dele cai na Geist Mono (Google Fonts). */
 /* Layout: canvas infinito arrastável de quadros escalonados, sob o menu em pílulas (valores medidos do sistema do site de referência) */
 :root {
@@ -37,8 +37,8 @@ img{max-width:100%}
   --gap-small: calc(10 * var(--u));
   --gap-medium: calc(20 * var(--u));
   --gap-large: calc(40 * var(--u));
-  --fs: 14px;
-  --lh: 17px;
+  --fs: 12px;
+  --lh: 15px;
   --page-top: max(4px, env(safe-area-inset-top, 0px));
   --page-side: max(4px, env(safe-area-inset-left, 0px));
   --page-bottom: max(4px, env(safe-area-inset-bottom, 0px));
@@ -61,6 +61,7 @@ body {
   color: var(--on-dark);
   font-family: var(--font-ui);
   font-variation-settings: "MONO" 1, "slnt" 0;
+  text-transform: uppercase;
   overflow: hidden;
   overscroll-behavior: none;
   -webkit-font-smoothing: antialiased;
@@ -166,6 +167,7 @@ body {
   white-space: nowrap;
 }
 *, *::before, *::after { box-sizing: border-box; }
+button, input { text-transform: inherit; }
 [hidden] { display: none !important; }
 
 /* menu: pílula separada; o painel abaixo cresce como em newlayer.cc */
