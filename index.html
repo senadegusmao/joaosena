@@ -478,13 +478,14 @@ a.row { cursor: pointer; }
   function center() { ox = vw / 2 - px / 2; oy = Math.round(py * .12); }
 
   /* ---------- arrastar, inércia, roda ---------- */
-  let dragging = false, moved = 0, lastX = 0, lastY = 0, lastT = 0, downTile = null, inertia = false;
+  let samples = [], dragging = false, moved = 0, lastX = 0, lastY = 0, lastT = 0, downTile = null, inertia = false;
 
   stage.addEventListener('pointerdown', e => {
     if (lbOpen || e.button !== 0) return;
     closePanels();
     dragging = true; moved = 0; vx = vy = 0; inertiaId++; inertia = false;
     lastX = e.clientX; lastY = e.clientY; lastT = performance.now();
+    samples = [{ t: lastT, x: lastX, y: lastY }];
     downTile = e.target.closest('.tile');
     try { stage.setPointerCapture(e.pointerId); } catch (err) {}
     stage.classList.add('dragging');
@@ -497,6 +498,8 @@ a.row { cursor: pointer; }
     vx = vx * .7 + (dx * 16 / dt) * .3;
     vy = vy * .7 + (dy * 16 / dt) * .3;
     lastX = e.clientX; lastY = e.clientY; lastT = now;
+    samples.push({ t: now, x: lastX, y: lastY });
+    while (samples.length > 2 && now - samples[0].t > 160) samples.shift();
     if (moved > 6) hint.classList.add('gone');
     requestRender();
   });
@@ -505,47 +508,65 @@ a.row { cursor: pointer; }
     dragging = false;
     stage.classList.remove('dragging');
     if (moved < 6 && downTile) { openTile(downTile); return; }
-    if (performance.now() - lastT > 80) { vx = vy = 0; }
+    /* velocidade medida nos últimos ~100ms até o instante de soltar: no mouse, uma pausa curta
+       antes de soltar só reduz o deslize em vez de zerá-lo (antes o quique sumia no desktop) */
+    const now = performance.now();
+    const s0 = samples.find(p => now - p.t <= 140);
+    if (s0 && now - s0.t > 8) { const k = 16 / (now - s0.t); vx = (lastX - s0.x) * k; vy = (lastY - s0.y) * k; }
+    else if (!s0) { vx = vy = 0; }
     startInertia();
   };
   stage.addEventListener('pointerup', endDrag);
   stage.addEventListener('pointercancel', endDrag);
 
-  /* ao soltar: a grade desliza até onde a inércia levaria e assenta com um leve quique (mola amortecida) */
-  let inertiaId = 0;
-  function startInertia() {
-    if (reduce) return;
-    const id = ++inertiaId;
+  /* mola amortecida única: ao soltar o arrasto a grade desliza até onde a inércia levaria e assenta
+     com um leve quique; a roda/trackpad do desktop move o alvo e a grade segue pela mesma mola */
+  let inertiaId = 0, springId = 0, tgtX = 0, tgtY = 0, velX = 0, velY = 0, kS = 70, cS = 11;
+  function runSpring() {
+    if (inertia && springId === inertiaId) return;
+    const id = springId = ++inertiaId;
     inertia = true;
-    /* velocidade em px/quadro (60 fps) → destino projetado igual ao deslize antigo */
-    const tx = ox + vx / (1 - 0.94), ty = oy + vy / (1 - 0.94);
-    let px_ = ox, py_ = oy, sx = vx * 60, sy = vy * 60;     /* px/s */
-    const K = 70, C = 11;                                   /* rigidez e amortecimento: ~6% de ultrapassagem */
     let last = performance.now();
     const step = now => {
-      if (id !== inertiaId || dragging || lbOpen) { inertia = false; return; }
+      if (id !== inertiaId || dragging || lbOpen) { if (id === springId) inertia = false; return; }
       let dt = Math.min(0.05, (now - last) / 1000); last = now;
+      let px_ = ox, py_ = oy;
       while (dt > 0) {
         const h = Math.min(dt, 1 / 240); dt -= h;
-        sx += (-K * (px_ - tx) - C * sx) * h; sy += (-K * (py_ - ty) - C * sy) * h;
-        px_ += sx * h; py_ += sy * h;
+        velX += (-kS * (px_ - tgtX) - cS * velX) * h; velY += (-kS * (py_ - tgtY) - cS * velY) * h;
+        px_ += velX * h; py_ += velY * h;
       }
       ox = px_; oy = py_; render();
-      if (Math.abs(px_ - tx) < 0.15 && Math.abs(py_ - ty) < 0.15 && Math.abs(sx) < 3 && Math.abs(sy) < 3) {
-        ox = tx; oy = ty; render(); vx = vy = 0; inertia = false; return;
+      if (Math.abs(px_ - tgtX) < 0.15 && Math.abs(py_ - tgtY) < 0.15 && Math.abs(velX) < 3 && Math.abs(velY) < 3) {
+        ox = tgtX; oy = tgtY; render(); vx = vy = velX = velY = 0; inertia = false; return;
       }
       requestAnimationFrame(step);
     };
     requestAnimationFrame(step);
+  }
+  function startInertia() {
+    if (reduce) return;
+    inertiaId++; inertia = false;
+    /* velocidade em px/quadro (60 fps) → destino projetado igual ao deslize antigo */
+    tgtX = ox + vx / (1 - 0.94); tgtY = oy + vy / (1 - 0.94);
+    velX = vx * 60; velY = vy * 60;
+    kS = 70; cS = 11;                                       /* ~6% de ultrapassagem */
+    runSpring();
   }
 
   addEventListener('wheel', e => {
     if (e.target.closest('.nav-inner')) return;
     e.preventDefault();
     if (lbOpen) return;
-    ox -= e.deltaX; oy -= e.deltaY;
     hint.classList.add('gone');
-    requestRender();
+    let dx = e.deltaX, dy = e.deltaY;
+    if (e.deltaMode === 1) { dx *= 16; dy *= 16; } else if (e.deltaMode === 2) { dx *= vw; dy *= vh; }
+    if (e.shiftKey && !dx) { dx = dy; dy = 0; }
+    if (reduce) { ox -= dx; oy -= dy; requestRender(); return; }
+    if (!inertia || springId !== inertiaId) { tgtX = ox; tgtY = oy; velX = velY = 0; }
+    tgtX -= dx; tgtY -= dy;
+    kS = 160; cS = 15;                                      /* segue o dedo de perto e assenta com quique leve */
+    runSpring();
   }, { passive: false });
 
   addEventListener('keydown', e => {
