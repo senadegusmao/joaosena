@@ -199,18 +199,21 @@ button, input { text-transform: inherit; }
   top: calc(100% + 4px);
   right: 0;
   width: min(360px, calc(100vw - var(--page-side) * 2));
-  overflow: hidden;
-  border-radius: var(--pill-radius);
 }
-/* o vidro fica sempre na altura final e é revelado por máscara: o desfoque do fundo
-   não muda enquanto o painel abre (recortar a caixa fazia o brilho do fundo "andar") */
-.nav-inner {
+/* o vidro é uma camada própria, sem nada animando dentro dele, sem máscara e sem recorte
+   arredondado por cima: é isso que faz o desfoque piscar/sumir no Safari do iPhone */
+.nav-glass {
+  position: absolute;
+  inset: 0;
   border-radius: var(--pill-radius);
   background-color: var(--pill-bg-alpha);
   -webkit-backdrop-filter: blur(var(--pill-blur));
   backdrop-filter: blur(var(--pill-blur));
-  -webkit-mask: linear-gradient(#000 0 0) top / 100% 100% no-repeat;
-  mask: linear-gradient(#000 0 0) top / 100% 100% no-repeat;
+  pointer-events: none;
+}
+/* o texto fica numa camada separada, por cima do vidro; esta caixa só recorta */
+.nav-clip { position: relative; overflow: hidden; }
+.nav-inner {
   padding: 12px 12px 16px;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -340,7 +343,7 @@ a.row { cursor: pointer; }
     <button class="nav-toggle" id="btn-info" type="button" aria-expanded="false" aria-controls="nav-body">
       <span>Info</span>
     </button>
-    <div class="nav-body" id="nav-body" hidden><div class="nav-inner">
+    <div class="nav-body" id="nav-body" hidden><div class="nav-glass" aria-hidden="true"></div><div class="nav-clip"><div class="nav-inner">
       <section class="block">
         <h2 class="block-head">Work Experience</h2>
         <ul class="rows">
@@ -378,7 +381,7 @@ a.row { cursor: pointer; }
           <li><a class="row" href="https://www.instagram.com/jvsena/" target="_blank" rel="noopener"><span>Instagram</span></a></li>
         </ul>
       </section>
-    </div></div>
+    </div></div></div>
   </nav>
 </div>
 <p class="hint" id="hint">Drag to explore · click to enlarge</p>
@@ -623,25 +626,23 @@ a.row { cursor: pointer; }
   const EASE_OUT = 'cubic-bezier(0.22, 1, 0.36, 1)';
   let navOpen = false, navAnims = [];
   function stopNav() { navAnims.forEach(a => a.cancel()); navAnims = []; }
-  const MS = 'webkitMaskSize' in document.body.style && !('maskSize' in document.body.style) ? 'webkitMaskSize' : 'maskSize';
-  const reveal = p => ({ [MS]: '100% ' + (p * 100).toFixed(3) + '%' });
-  function shownFrac() {
-    if (navBody.hidden) return 0;
-    const m = /([\d.]+)%\s*$/.exec(getComputedStyle(navInner)[MS] || '');
-    return m ? Math.min(1, parseFloat(m[1]) / 100) : 1;
-  }
+  const navGlass = navBody.querySelector('.nav-glass');
+  const navClip = navBody.querySelector('.nav-clip');
+  function shownHeight() { return navBody.hidden ? 0 : navGlass.getBoundingClientRect().height; }
   function setNav(open) {
     if (open === navOpen) return;
-    const p0 = shownFrac();
+    const h0 = shownHeight();
     stopNav();
     navOpen = open;
     nav.classList.toggle('open', open);
     navBtn.setAttribute('aria-expanded', open);
     const blocks = [...navInner.children];
     navBody.hidden = false;
+    const H = navInner.offsetHeight;
     if (reduce) { navBody.hidden = !open; return; }
+    const box = (to, opt) => [navGlass, navClip].map(el => el.animate([{ height: h0 + 'px' }, { height: to + 'px' }], opt));
     if (open) {
-      navAnims.push(navInner.animate([reveal(p0), reveal(1)], { duration: 650, easing: EASE_BOX }));
+      navAnims.push(...box(H, { duration: 650, easing: EASE_BOX }));
       blocks.forEach((b, i) => navAnims.push(b.animate(
         [{ opacity: 0, transform: 'translateY(15px)' }, { opacity: 1, transform: 'translateY(0)' }],
         { duration: 550, delay: 220 + i * 110, easing: EASE_OUT, fill: 'backwards' })));
@@ -649,9 +650,9 @@ a.row { cursor: pointer; }
       blocks.slice().reverse().forEach((b, i) => navAnims.push(b.animate(
         [{ opacity: 1, transform: 'translateY(0)' }, { opacity: 0, transform: 'translateY(15px)' }],
         { duration: 250, delay: i * 50, easing: 'ease-in', fill: 'forwards' })));
-      const box = navInner.animate([reveal(p0), reveal(0)], { duration: 550, delay: 120, easing: EASE_BOX, fill: 'both' });
-      navAnims.push(box);
-      box.onfinish = () => { if (!navOpen) { navBody.hidden = true; stopNav(); } };
+      const [g, c] = box(0, { duration: 550, delay: 120, easing: EASE_BOX, fill: 'both' });
+      navAnims.push(g, c);
+      g.onfinish = () => { if (!navOpen) { navBody.hidden = true; stopNav(); } };
     }
   }
   function closePanels() { setNav(false); }
