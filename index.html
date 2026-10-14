@@ -476,7 +476,7 @@ a.row { cursor: pointer; }
   stage.addEventListener('pointerdown', e => {
     if (lbOpen || e.button !== 0) return;
     closePanels();
-    dragging = true; moved = 0; vx = vy = 0;
+    dragging = true; moved = 0; vx = vy = 0; inertiaId++; inertia = false;
     lastX = e.clientX; lastY = e.clientY; lastT = performance.now();
     downTile = e.target.closest('.tile');
     try { stage.setPointerCapture(e.pointerId); } catch (err) {}
@@ -504,16 +504,29 @@ a.row { cursor: pointer; }
   stage.addEventListener('pointerup', endDrag);
   stage.addEventListener('pointercancel', endDrag);
 
+  /* ao soltar: a grade desliza até onde a inércia levaria e assenta com um leve quique (mola amortecida) */
+  let inertiaId = 0;
   function startInertia() {
-    if (reduce || inertia) return;
+    if (reduce) return;
+    const id = ++inertiaId;
     inertia = true;
+    /* velocidade em px/quadro (60 fps) → destino projetado igual ao deslize antigo */
+    const tx = ox + vx / (1 - 0.94), ty = oy + vy / (1 - 0.94);
+    let px_ = ox, py_ = oy, sx = vx * 60, sy = vy * 60;     /* px/s */
+    const K = 70, C = 11;                                   /* rigidez e amortecimento: ~6% de ultrapassagem */
     let last = performance.now();
-    const step = () => {
-      if (dragging || lbOpen || (Math.abs(vx) < .05 && Math.abs(vy) < .05)) { inertia = false; return; }
-      const now = performance.now(), k = Math.min(4, (now - last) / 16.667); last = now;
-      ox += vx * k; oy += vy * k;
-      const f = Math.pow(.94, k); vx *= f; vy *= f;
-      render();
+    const step = now => {
+      if (id !== inertiaId || dragging || lbOpen) { inertia = false; return; }
+      let dt = Math.min(0.05, (now - last) / 1000); last = now;
+      while (dt > 0) {
+        const h = Math.min(dt, 1 / 240); dt -= h;
+        sx += (-K * (px_ - tx) - C * sx) * h; sy += (-K * (py_ - ty) - C * sy) * h;
+        px_ += sx * h; py_ += sy * h;
+      }
+      ox = px_; oy = py_; render();
+      if (Math.abs(px_ - tx) < 0.15 && Math.abs(py_ - ty) < 0.15 && Math.abs(sx) < 3 && Math.abs(sy) < 3) {
+        ox = tx; oy = ty; render(); vx = vy = 0; inertia = false; return;
+      }
       requestAnimationFrame(step);
     };
     requestAnimationFrame(step);
@@ -634,7 +647,7 @@ a.row { cursor: pointer; }
   function closePanels() { setNav(false); }
   navBtn.addEventListener('click', () => { if (lbOpen) closeLb(); setNav(!navOpen); });
   document.getElementById('home').addEventListener('click', e => {
-    e.preventDefault(); closePanels(); closeLb(true); vx = vy = 0; center(); render();
+    e.preventDefault(); closePanels(); closeLb(true); vx = vy = 0; inertiaId++; center(); render();
   });
 
   /* ---------- início ---------- */
@@ -734,7 +747,7 @@ a.row { cursor: pointer; }
 
   /* ---------- saída: a introdução ao contrário ---------- */
   window.portfolioOutro = function outro() {
-    closePanels(); closeLb(true); vx = vy = 0;
+    closePanels(); closeLb(true); vx = vy = 0; inertiaId++;
     const chars = [...document.querySelectorAll('.wordmark .ch')].reverse();
     const ease = 'cubic-bezier(0.7, 0, 0.8, 0.2)';
     hint.animate([{ opacity: getComputedStyle(hint).opacity }, { opacity: 0 }], { duration: 300, fill: 'forwards' });
