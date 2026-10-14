@@ -618,19 +618,29 @@ a.row { cursor: pointer; }
   const EASE_OUT = 'cubic-bezier(0.22, 1, 0.36, 1)';
   let navOpen = false, navAnims = [];
   function stopNav() { navAnims.forEach(a => a.cancel()); navAnims = []; }
+  /* o painel fica sempre na altura final e é revelado por clip-path: o desfoque do fundo
+     é calculado uma vez só, sem refazer layout a cada quadro (era o que piscava ao abrir) */
+  const clipAt = (H, h) => `inset(0px 0px ${Math.max(0, H - h)}px 0px round 4px)`;
+  function shownHeight() {
+    if (navBody.hidden) return 0;
+    const full = navBody.offsetHeight;
+    const n = (getComputedStyle(navBody).clipPath.split('round')[0].match(/[\d.]+/g) || []).map(Number);
+    if (!n.length) return full;
+    return Math.max(0, full - (n.length >= 3 ? n[2] : n[0]));
+  }
   function setNav(open) {
     if (open === navOpen) return;
-    const h0 = navBody.hidden ? 0 : navBody.getBoundingClientRect().height;
+    const h0 = shownHeight();
     stopNav();
     navOpen = open;
     nav.classList.toggle('open', open);
     navBtn.setAttribute('aria-expanded', open);
     const blocks = [...navInner.children];
     navBody.hidden = false;
-    const H = navInner.getBoundingClientRect().height;
+    const H = navBody.offsetHeight;
     if (reduce) { navBody.hidden = !open; return; }
     if (open) {
-      navAnims.push(navBody.animate([{ height: h0 + 'px' }, { height: H + 'px' }], { duration: 650, easing: EASE_BOX }));
+      navAnims.push(navBody.animate([{ clipPath: clipAt(H, h0) }, { clipPath: clipAt(H, H) }], { duration: 650, easing: EASE_BOX }));
       blocks.forEach((b, i) => navAnims.push(b.animate(
         [{ opacity: 0, transform: 'translateY(15px)' }, { opacity: 1, transform: 'translateY(0)' }],
         { duration: 550, delay: 220 + i * 110, easing: EASE_OUT, fill: 'backwards' })));
@@ -638,7 +648,7 @@ a.row { cursor: pointer; }
       blocks.slice().reverse().forEach((b, i) => navAnims.push(b.animate(
         [{ opacity: 1, transform: 'translateY(0)' }, { opacity: 0, transform: 'translateY(15px)' }],
         { duration: 250, delay: i * 50, easing: 'ease-in', fill: 'forwards' })));
-      const box = navBody.animate([{ height: h0 + 'px' }, { height: '0px' }], { duration: 550, delay: 120, easing: EASE_BOX, fill: 'forwards' });
+      const box = navBody.animate([{ clipPath: clipAt(H, h0) }, { clipPath: clipAt(H, 0) }], { duration: 550, delay: 120, easing: EASE_BOX, fill: 'both' });
       navAnims.push(box);
       box.onfinish = () => { if (!navOpen) { navBody.hidden = true; stopNav(); } };
     }
